@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { apiGet, apiPost, apiDelete } from '@/lib/api';
+import { apiGet, apiPost, apiDelete, apiPatch } from '@/lib/api';
 
 const PERFIS = ['ADMIN', 'SUPER_ADMIN', 'PROFESSOR', 'ENCARREGADO', 'ALUNO'];
 
@@ -25,9 +25,14 @@ export default function UtilizadoresPage() {
     setTimeout(() => setMsg({ text: '', type: '' }), 3000);
   }
 
+  async function toggleAtivo(id) {
+    try { await apiPatch(`utilizadores/${id}/toggle`, {}); await carregar(); flash('Estado atualizado.', 'success'); }
+    catch (e) { flash(e.message, 'danger'); }
+  }
+
   async function remover(id) {
-    if (!confirm('Desativar este utilizador?')) return;
-    try { await apiDelete(`utilizadores/${id}`); await carregar(); flash('Utilizador desativado.', 'success'); }
+    if (!confirm('Remover este utilizador?')) return;
+    try { await apiDelete(`utilizadores/${id}`); await carregar(); flash('Utilizador removido.', 'success'); }
     catch (e) { flash(e.message, 'danger'); }
   }
 
@@ -102,8 +107,11 @@ export default function UtilizadoresPage() {
                   </td>
                   <td>
                     <div className="action-btns">
-                      <button className="action-btn del" title="Desativar" onClick={() => remover(u.id)}>
+                      <button className="btn btn-sm btn-outline-secondary me-1" title="Ativar/Desativar" onClick={() => toggleAtivo(u.id)}>
                         <i className="fa-solid fa-power-off" />
+                      </button>
+                      <button className="action-btn del" title="Remover" onClick={() => remover(u.id)}>
+                        <i className="fa-solid fa-trash" />
                       </button>
                     </div>
                   </td>

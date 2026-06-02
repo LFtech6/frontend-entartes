@@ -24,7 +24,7 @@ export default function LoginPage() {
       const data = await res.json();
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      router.push(data.user.perfil === 'ENCARREGADO' ? '/calendario' : '/dashboard');
+      router.push('/calendario');
     } catch (err) {
       setError(err.message || 'Erro ao iniciar sessão.');
     } finally {
