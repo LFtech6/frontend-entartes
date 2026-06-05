@@ -53,7 +53,7 @@ export default function SessoesPage() {
   }
 
   const turmaInfo = turmas.find(t => t.id === +form.turmaId);
-  const lista = sessoes.filter(s => !s.inscricaoAberta).filter(s => aba === "POR_DAR" ? !s.foiDada : s.foiDada);
+  const lista = sessoes.filter(s => !s.inscricaoAberta).filter(s => aba === "POR_DAR" ? !s.foiDada : s.foiDada).sort((a, b) => a.id - b.id);
 
   return (
     <>
