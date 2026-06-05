@@ -1,70 +1,99 @@
 'use client';
-import { useState } from 'react';
-import { getUser } from '@/lib/auth';
+import { useState, useEffect, useCallback } from 'react';
+import { apiGet } from '@/lib/api';
+import { getUser, getToken } from '@/lib/auth';
 
-const SEED = [
-  { id: 1, nome: 'Traje Ballet Rosa',   categoria: 'Trajes',     tamanho: 'S',  qtdTotal: 3, qtdDisp: 2, preco: 12.5, ativo: true },
-  { id: 2, nome: 'Sapatos Flamenco',    categoria: 'Sapatos',    tamanho: '36', qtdTotal: 2, qtdDisp: 1, preco: 8.0,  ativo: true },
-  { id: 3, nome: 'Tiara brilhante',     categoria: 'Acessórios', tamanho: '',   qtdTotal: 5, qtdDisp: 5, preco: 3.5,  ativo: true },
-];
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5166/api';
 
 export default function InventarioPage() {
-  const [itens, setItens] = useState(SEED);
+  const [itens, setItens] = useState([]);
   const [pesquisa, setPesquisa] = useState('');
   const [filtroCat, setFiltroCat] = useState('');
   const [showItemModal, setShowItemModal] = useState(false);
   const [showAluguerModal, setShowAluguerModal] = useState(false);
   const [itemAluguer, setItemAluguer] = useState(null);
-  const [aluguerForm, setAluguerForm] = useState({ inicio: '', fim: '' });
-  const [itemForm, setItemForm] = useState({ nome: '', categoria: '', tamanho: '', qtdTotal: 0, qtdDisp: 0, preco: 0 });
+  const [alunos, setAlunos] = useState([]);
+  const [alunoId, setAlunoId] = useState('');
+  const [itemForm, setItemForm] = useState({ nome: '', categoria: '', tamanho: '', quantidadeTotal: 1, quantidadeDisponivel: 1, precoAluguer: 0, localizacao: '', imagem: null });
   const [msg, setMsg] = useState(null);
 
   const user = getUser();
   const role = user?.perfil || '';
   const podeAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
-  const canRent = role === 'ENCARREGADO' || podeAdmin;
+  const canRent = role === 'ENCARREGADO' || role === 'ALUNO' || podeAdmin;
 
   function showMsg(text, type = 'info') {
     setMsg({ text, type });
     setTimeout(() => setMsg(null), 2500);
   }
 
+  const carregar = useCallback(async () => {
+    try {
+      const data = await apiGet('inventario');
+      setItens(data);
+    } catch (err) {
+      showMsg(err.message || 'Erro ao carregar inventário.', 'danger');
+    }
+  }, []);
+
+  useEffect(() => {
+    carregar();
+    if (canRent) apiGet('alunos').then(setAlunos).catch(() => {});
+  }, [carregar]);
+
   const filtered = itens
-    .filter(i => i.ativo !== false)
     .filter(i => !filtroCat || i.categoria === filtroCat)
     .filter(i => !pesquisa || (i.nome + ' ' + (i.categoria || '')).toLowerCase().includes(pesquisa.toLowerCase()));
 
   const categorias = [...new Set(itens.map(i => i.categoria).filter(Boolean))];
 
-  function remover(id) {
-    if (!podeAdmin) return;
-    if (!confirm('Remover este item do inventário?')) return;
-    setItens(prev => prev.filter(i => i.id !== id));
-    showMsg('Item removido.', 'success');
-  }
-
-  function abrirAluguer(id) {
-    const item = itens.find(x => x.id === id);
-    if (!item) return;
-    setItemAluguer(item);
-    const hoje = new Date().toISOString().substring(0, 10);
-    setAluguerForm({ inicio: hoje, fim: hoje });
-    setShowAluguerModal(true);
-  }
-
-  function submitAluguer(e) {
+  async function submitAluguer(e) {
     e.preventDefault();
-    setShowAluguerModal(false);
-    showMsg('Pedido de aluguer enviado (mock).', 'success');
+    if (!alunoId) { showMsg('Seleciona um aluno.', 'warning'); return; }
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/inventario/${itemAluguer.id}/alugar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(parseInt(alunoId, 10)),
+      });
+      if (!res.ok) { const t = await res.text(); throw new Error(t); }
+      setShowAluguerModal(false);
+      setAlunoId('');
+      showMsg('Item alugado com sucesso.', 'success');
+      carregar();
+    } catch (err) {
+      showMsg(err.message || 'Erro ao alugar item.', 'danger');
+    }
   }
 
-  function submitItem(e) {
+  async function submitItem(e) {
     e.preventDefault();
-    const novo = { ...itemForm, id: Math.max(0, ...itens.map(x => x.id)) + 1, ativo: true, qtdTotal: Number(itemForm.qtdTotal), qtdDisp: Number(itemForm.qtdDisp), preco: Number(itemForm.preco) };
-    setItens(prev => [novo, ...prev]);
-    setShowItemModal(false);
-    setItemForm({ nome: '', categoria: '', tamanho: '', qtdTotal: 0, qtdDisp: 0, preco: 0 });
-    showMsg('Item criado.', 'success');
+    try {
+      const token = getToken();
+      const fd = new FormData();
+      fd.append('nome', itemForm.nome);
+      if (itemForm.categoria) fd.append('categoria', itemForm.categoria);
+      if (itemForm.tamanho) fd.append('tamanho', itemForm.tamanho);
+      fd.append('quantidadeTotal', itemForm.quantidadeTotal);
+      fd.append('quantidadeDisponivel', itemForm.quantidadeDisponivel);
+      fd.append('precoAluguer', itemForm.precoAluguer);
+      if (itemForm.localizacao) fd.append('localizacao', itemForm.localizacao);
+      if (itemForm.imagem) fd.append('imagem', itemForm.imagem);
+
+      const res = await fetch(`${API_BASE}/inventario`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) { const t = await res.text(); throw new Error(t); }
+      setShowItemModal(false);
+      setItemForm({ nome: '', categoria: '', tamanho: '', quantidadeTotal: 1, quantidadeDisponivel: 1, precoAluguer: 0, localizacao: '', imagem: null });
+      showMsg('Item criado com sucesso.', 'success');
+      carregar();
+    } catch (err) {
+      showMsg(err.message || 'Erro ao criar item.', 'danger');
+    }
   }
 
   return (
@@ -97,31 +126,27 @@ export default function InventarioPage() {
       <div className="row g-3">
         {filtered.length === 0 && <div className="col-12"><div className="small-muted">Sem itens.</div></div>}
         {filtered.map(i => {
-          const disponivel = i.qtdDisp > 0;
+          const disponivel = i.quantidadeDisponivel > 0;
           return (
             <div key={i.id} className="col-md-6 col-lg-4">
               <div className="card p-3 h-100">
+                {i.imagemUrl && <img src={i.imagemUrl} alt={i.nome} style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 6, marginBottom: 10 }} />}
                 <div className="d-flex justify-content-between align-items-start">
                   <div>
                     <h6 className="mb-1">{i.nome}</h6>
                     <div className="small-muted">{i.categoria}{i.tamanho ? ' • ' + i.tamanho : ''}</div>
                   </div>
-                  <div className="d-flex align-items-center gap-2">
-                    <span className={`badge ${disponivel ? 'text-bg-success' : 'text-bg-danger'}`}>{disponivel ? 'Disponível' : 'Indisponível'}</span>
-                    {podeAdmin && (
-                      <button className="btn btn-sm btn-outline-danger" onClick={() => remover(i.id)}>
-                        <i className="fa-solid fa-trash" />
-                      </button>
-                    )}
-                  </div>
+                  <span className={`badge ${disponivel ? 'text-bg-success' : 'text-bg-danger'}`}>{disponivel ? 'Disponível' : 'Indisponível'}</span>
                 </div>
                 <hr className="my-2" />
-                <div className="small"><b>Total:</b> {i.qtdTotal}</div>
-                <div className="small"><b>Disponível:</b> {i.qtdDisp}</div>
-                <div className="small"><b>Preço:</b> €{Number(i.preco).toFixed(2)}</div>
+                <div className="small"><b>Total:</b> {i.quantidadeTotal}</div>
+                <div className="small"><b>Disponível:</b> {i.quantidadeDisponivel}</div>
+                <div className="small"><b>Preço aluguer:</b> €{Number(i.precoAluguer || 0).toFixed(2)}</div>
+                {i.localizacao && <div className="small"><b>Localização:</b> {i.localizacao}</div>}
                 {canRent && (
                   <div className="mt-3">
-                    <button className={`btn btn-sm btn-outline-primary${disponivel ? '' : ' disabled'}`} onClick={() => abrirAluguer(i.id)}>
+                    <button className={`btn btn-sm btn-outline-primary${disponivel ? '' : ' disabled'}`}
+                      onClick={() => { setItemAluguer(i); setAlunoId(''); setShowAluguerModal(true); }}>
                       <i className="fa-solid fa-hand-holding-heart me-1" />Alugar
                     </button>
                   </div>
@@ -137,19 +162,22 @@ export default function InventarioPage() {
           <div className="modal-dialog">
             <div className="modal-content">
               <div className="modal-header">
-                <h5 className="modal-title">Pedido de Aluguer</h5>
+                <h5 className="modal-title">Alugar: {itemAluguer.nome}</h5>
                 <button type="button" className="btn-close" onClick={() => setShowAluguerModal(false)} />
               </div>
               <form onSubmit={submitAluguer}>
                 <div className="modal-body">
-                  <div className="mb-2"><b>Item:</b> {itemAluguer.nome}</div>
-                  <div className="mb-3"><b>Tamanho:</b> {itemAluguer.tamanho || '-'}</div>
-                  <div className="mb-3"><label className="form-label">Data início</label><input type="date" className="form-control" required value={aluguerForm.inicio} onChange={e => setAluguerForm(f => ({ ...f, inicio: e.target.value }))} /></div>
-                  <div className="mb-3"><label className="form-label">Data fim</label><input type="date" className="form-control" required value={aluguerForm.fim} onChange={e => setAluguerForm(f => ({ ...f, fim: e.target.value }))} /></div>
+                  <div className="mb-3">
+                    <label className="form-label">Aluno *</label>
+                    <select className="form-select" required value={alunoId} onChange={e => setAlunoId(e.target.value)}>
+                      <option value="">Selecionar aluno</option>
+                      {alunos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="modal-footer">
                   <button type="button" className="btn btn-secondary" onClick={() => setShowAluguerModal(false)}>Cancelar</button>
-                  <button type="submit" className="btn btn-primary">Enviar Pedido</button>
+                  <button type="submit" className="btn btn-primary">Confirmar Aluguer</button>
                 </div>
               </form>
             </div>
@@ -171,10 +199,12 @@ export default function InventarioPage() {
                   <div className="mb-3"><label className="form-label">Categoria</label><input className="form-control" value={itemForm.categoria} onChange={e => setItemForm(f => ({ ...f, categoria: e.target.value }))} /></div>
                   <div className="mb-3"><label className="form-label">Tamanho</label><input className="form-control" value={itemForm.tamanho} onChange={e => setItemForm(f => ({ ...f, tamanho: e.target.value }))} /></div>
                   <div className="row">
-                    <div className="col mb-3"><label className="form-label">Qtd Total</label><input type="number" className="form-control" min={0} value={itemForm.qtdTotal} onChange={e => setItemForm(f => ({ ...f, qtdTotal: e.target.value }))} /></div>
-                    <div className="col mb-3"><label className="form-label">Qtd Disponível</label><input type="number" className="form-control" min={0} value={itemForm.qtdDisp} onChange={e => setItemForm(f => ({ ...f, qtdDisp: e.target.value }))} /></div>
+                    <div className="col mb-3"><label className="form-label">Qtd Total</label><input type="number" className="form-control" min={1} value={itemForm.quantidadeTotal} onChange={e => setItemForm(f => ({ ...f, quantidadeTotal: e.target.value }))} /></div>
+                    <div className="col mb-3"><label className="form-label">Qtd Disponível</label><input type="number" className="form-control" min={0} value={itemForm.quantidadeDisponivel} onChange={e => setItemForm(f => ({ ...f, quantidadeDisponivel: e.target.value }))} /></div>
                   </div>
-                  <div className="mb-3"><label className="form-label">Preço (€)</label><input type="number" step="0.01" className="form-control" min={0} value={itemForm.preco} onChange={e => setItemForm(f => ({ ...f, preco: e.target.value }))} /></div>
+                  <div className="mb-3"><label className="form-label">Preço Aluguer (€)</label><input type="number" step="0.01" className="form-control" min={0} value={itemForm.precoAluguer} onChange={e => setItemForm(f => ({ ...f, precoAluguer: e.target.value }))} /></div>
+                  <div className="mb-3"><label className="form-label">Localização</label><input className="form-control" value={itemForm.localizacao} onChange={e => setItemForm(f => ({ ...f, localizacao: e.target.value }))} /></div>
+                  <div className="mb-3"><label className="form-label">Imagem</label><input type="file" className="form-control" accept=".jpg,.jpeg,.png,.webp" onChange={e => setItemForm(f => ({ ...f, imagem: e.target.files[0] || null }))} /></div>
                 </div>
                 <div className="modal-footer">
                   <button type="button" className="btn btn-secondary" onClick={() => setShowItemModal(false)}>Cancelar</button>

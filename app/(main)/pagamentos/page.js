@@ -1,22 +1,20 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { apiGet, apiPost } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 
-const SEED = [
-  { id: 1, aluno: 'Maria Silva', desc: 'Mensalidade Fevereiro', valor: 25.00, venc: '2026-02-10', estado: 'PENDENTE' },
-  { id: 2, aluno: 'João Costa',  desc: 'Aluguer Traje',         valor: 12.50, venc: '2026-02-05', estado: 'PAGO'     },
-  { id: 3, aluno: 'Inês Rocha',  desc: 'Mensalidade Março',     valor: 25.00, venc: '2026-03-10', estado: 'PENDENTE' },
-];
-
-function loadPays() { try { return JSON.parse(localStorage.getItem('pagamentos') || '[]'); } catch { return []; } }
-function savePays(arr) { localStorage.setItem('pagamentos', JSON.stringify(arr)); }
+function formatDT(dt) {
+  if (!dt) return '-';
+  return new Date(dt).toLocaleString('pt-PT', { dateStyle: 'short' });
+}
 
 export default function PagamentosPage() {
   const [pagamentos, setPagamentos] = useState([]);
+  const [alunos, setAlunos] = useState([]);
   const [filtro, setFiltro] = useState('');
   const [pesquisa, setPesquisa] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ aluno: '', desc: '', valor: 0, venc: '', estado: 'PENDENTE' });
+  const [form, setForm] = useState({ alunoId: '', valor: '', tipo: 'MANUAL', descricao: '', mes: '', ano: '' });
   const [msg, setMsg] = useState(null);
 
   const user = getUser();
@@ -25,57 +23,47 @@ export default function PagamentosPage() {
 
   function showMsg(text, type = 'info') {
     setMsg({ text, type });
-    setTimeout(() => setMsg(null), 2200);
+    setTimeout(() => setMsg(null), 2500);
   }
+
+  const carregar = useCallback(async () => {
+    try {
+      const endpoint = isAdmin ? 'pagamentos' : 'pagamentos/meus';
+      const data = await apiGet(endpoint);
+      setPagamentos(data);
+    } catch (err) {
+      showMsg(err.message || 'Erro ao carregar pagamentos.', 'danger');
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
-    let stored = loadPays();
-    if (!stored.length) { stored = SEED; savePays(stored); }
-    setPagamentos(stored);
-  }, []);
+    carregar();
+    if (isAdmin) apiGet('alunos').then(setAlunos).catch(() => {});
+  }, [carregar, isAdmin]);
 
   const filtered = pagamentos
-    .filter(p => isAdmin || role === 'ENCARREGADO')
-    .filter(p => !filtro || p.estado === filtro)
-    .filter(p => !pesquisa || ((p.aluno || '') + ' ' + (p.desc || '')).toLowerCase().includes(pesquisa.toLowerCase()))
-    .sort((a, b) => a.id - b.id);
+    .filter(p => !filtro || String(p.estado || '').toUpperCase() === filtro)
+    .filter(p => !pesquisa || ((p.nomeAluno || '') + ' ' + (p.descricao || '') + ' ' + (p.referencia || '')).toLowerCase().includes(pesquisa.toLowerCase()));
 
-  function update(id, changes) {
-    const updated = pagamentos.map(p => p.id === id ? { ...p, ...changes } : p);
-    setPagamentos(updated);
-    savePays(updated);
-  }
-
-  function pagar(id) {
-    update(id, { estado: 'PAGO' });
-    showMsg('Pagamento efetuado (mock).', 'success');
-  }
-
-  function marcarPago(id) {
-    if (!isAdmin) return;
-    update(id, { estado: 'PAGO' });
-    showMsg('Marcado como pago.', 'success');
-  }
-
-  function remover(id) {
-    if (!isAdmin) return;
-    if (!confirm('Remover pagamento?')) return;
-    const updated = pagamentos.filter(p => p.id !== id);
-    setPagamentos(updated);
-    savePays(updated);
-    showMsg('Pagamento removido.', 'success');
-  }
-
-  function submitForm(e) {
+  async function submitForm(e) {
     e.preventDefault();
     if (!isAdmin) return;
-    const novo = { ...form, id: Math.max(0, ...pagamentos.map(x => x.id)) + 1, valor: Number(form.valor) };
-    const updated = [novo, ...pagamentos];
-    setPagamentos(updated);
-    savePays(updated);
-    setShowModal(false);
-    setForm({ aluno: '', desc: '', valor: 0, venc: '', estado: 'PENDENTE' });
-    showMsg('Pagamento criado.', 'success');
+    try {
+      await apiPost('pagamentos', {
+        alunoId: parseInt(form.alunoId, 10),
+        valor: Number(form.valor),
+        tipo: form.tipo,
+        descricao: form.descricao || null,
+        mes: form.mes ? parseInt(form.mes, 10) : null,
+        ano: form.ano ? parseInt(form.ano, 10) : null,
+      });
+      setShowModal(false);
+      setForm({ alunoId: '', valor: '', tipo: 'MANUAL', descricao: '', mes: '', ano: '' });
+      showMsg('Pagamento criado.', 'success');
+      carregar();
+    } catch (err) {
+      showMsg(err.message || 'Erro ao criar pagamento.', 'danger');
+    }
   }
 
   return (
@@ -110,36 +98,23 @@ export default function PagamentosPage() {
         <div className="card-body-pad" style={{ overflowX: 'auto' }}>
           <table className="table table-sm">
             <thead>
-              <tr>
-                <th>#</th><th>Aluno</th><th>Descrição</th><th>Valor</th><th>Vencimento</th><th>Estado</th><th></th>
-              </tr>
+              <tr><th>#</th><th>Aluno</th><th>Tipo</th><th>Descrição</th><th>Valor</th><th>Mês/Ano</th><th>Data</th><th>Estado</th></tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={7} className="text-center small-muted">Sem registos.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8} className="text-center small-muted">Sem pagamentos.</td></tr>}
               {filtered.map(p => (
                 <tr key={p.id}>
                   <td>{p.id}</td>
-                  <td>{p.aluno}</td>
-                  <td>{p.desc}</td>
-                  <td>€{Number(p.valor).toFixed(2)}</td>
-                  <td>{p.venc}</td>
-                  <td><span className={`badge ${p.estado === 'PAGO' ? 'text-bg-success' : 'text-bg-warning'}`}>{p.estado === 'PAGO' ? 'Pago' : 'Pendente'}</span></td>
-                  <td className="text-nowrap">
-                    {role === 'ENCARREGADO' && p.estado === 'PENDENTE' && (
-                      <button className="btn btn-sm btn-outline-primary me-2" onClick={() => pagar(p.id)}>
-                        <i className="fa-solid fa-credit-card me-1" />Pagar
-                      </button>
-                    )}
-                    {isAdmin && (
-                      <>
-                        <button className="btn btn-sm btn-outline-success me-2" onClick={() => marcarPago(p.id)}>
-                          <i className="fa-solid fa-check" /> Marcar pago
-                        </button>
-                        <button className="btn btn-sm btn-outline-danger" onClick={() => remover(p.id)}>
-                          <i className="fa-solid fa-trash" />
-                        </button>
-                      </>
-                    )}
+                  <td>{p.nomeAluno || '-'}</td>
+                  <td>{p.tipo || '-'}</td>
+                  <td>{p.descricao || p.referencia || '-'}</td>
+                  <td>€{Number(p.valor || 0).toFixed(2)}</td>
+                  <td>{p.mes && p.ano ? `${p.mes}/${p.ano}` : '-'}</td>
+                  <td>{formatDT(p.dataPagamento || p.criadoEm)}</td>
+                  <td>
+                    <span className={`badge ${String(p.estado || '').toUpperCase() === 'PAGO' ? 'text-bg-success' : 'text-bg-warning'}`}>
+                      {p.estado || '-'}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -158,16 +133,26 @@ export default function PagamentosPage() {
               </div>
               <form onSubmit={submitForm}>
                 <div className="modal-body">
-                  <div className="mb-3"><label className="form-label">Aluno *</label><input className="form-control" required value={form.aluno} onChange={e => setForm(f => ({ ...f, aluno: e.target.value }))} /></div>
-                  <div className="mb-3"><label className="form-label">Descrição *</label><input className="form-control" required value={form.desc} onChange={e => setForm(f => ({ ...f, desc: e.target.value }))} /></div>
-                  <div className="mb-3"><label className="form-label">Valor (€)</label><input type="number" step="0.01" className="form-control" min={0} value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} /></div>
-                  <div className="mb-3"><label className="form-label">Vencimento</label><input type="date" className="form-control" value={form.venc} onChange={e => setForm(f => ({ ...f, venc: e.target.value }))} /></div>
                   <div className="mb-3">
-                    <label className="form-label">Estado</label>
-                    <select className="form-select" value={form.estado} onChange={e => setForm(f => ({ ...f, estado: e.target.value }))}>
-                      <option value="PENDENTE">Pendente</option>
-                      <option value="PAGO">Pago</option>
+                    <label className="form-label">Aluno *</label>
+                    <select className="form-select" required value={form.alunoId} onChange={e => setForm(f => ({ ...f, alunoId: e.target.value }))}>
+                      <option value="">Selecionar aluno</option>
+                      {alunos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
                     </select>
+                  </div>
+                  <div className="mb-3"><label className="form-label">Valor (€) *</label><input type="number" step="0.01" className="form-control" required min={0.01} value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} /></div>
+                  <div className="mb-3">
+                    <label className="form-label">Tipo</label>
+                    <select className="form-select" value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}>
+                      <option value="MANUAL">Manual</option>
+                      <option value="MENSALIDADE">Mensalidade</option>
+                      <option value="COACHING">Coaching</option>
+                    </select>
+                  </div>
+                  <div className="mb-3"><label className="form-label">Descrição</label><input className="form-control" value={form.descricao} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} /></div>
+                  <div className="row">
+                    <div className="col mb-3"><label className="form-label">Mês</label><input type="number" className="form-control" min={1} max={12} placeholder="1-12" value={form.mes} onChange={e => setForm(f => ({ ...f, mes: e.target.value }))} /></div>
+                    <div className="col mb-3"><label className="form-label">Ano</label><input type="number" className="form-control" min={2024} placeholder="2026" value={form.ano} onChange={e => setForm(f => ({ ...f, ano: e.target.value }))} /></div>
                   </div>
                 </div>
                 <div className="modal-footer">
