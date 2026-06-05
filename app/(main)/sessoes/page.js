@@ -7,8 +7,8 @@ function formatDT(dt) {
   return new Date(dt).toLocaleString("pt-PT", { dateStyle: "short", timeStyle: "short" });
 }
 function BadgeEstado({ estado }) {
-  const map = { AGENDADA: "teal", TERMINADA: "green", CANCELADA: "red" };
-  return <span className={"badge " + (map[estado] || "grey")}>{estado || "-"}</span>;
+  const map = { AGENDADA: "text-bg-primary", TERMINADA: "text-bg-success", CANCELADA: "text-bg-danger" };
+  return <span className={"badge " + (map[estado] || "text-bg-secondary")}>{estado || "-"}</span>;
 }
 const EMPTY = { dataInicio: "", dataFim: "", turmaId: "", estudioId: "", maxAlunos: "", sumario: "", inscricaoAberta: false };
 
@@ -71,8 +71,8 @@ export default function SessoesPage() {
       <div className="card">
         <div className="card-hdr">
           <div style={{ display: "flex", gap: 8 }}>
-            <button className={"nav-link" + (aba === "POR_DAR" ? " active" : "")} onClick={() => setAba("POR_DAR")}>Por Dar</button>
-            <button className={"nav-link" + (aba === "TERMINADAS" ? " active" : "")} onClick={() => setAba("TERMINADAS")}>Terminadas</button>
+            <button className={"btn btn-sm " + (aba === "POR_DAR" ? "btn-primary" : "btn-outline-secondary")} onClick={() => setAba("POR_DAR")}>Por Dar</button>
+            <button className={"btn btn-sm " + (aba === "TERMINADAS" ? "btn-primary" : "btn-outline-secondary")} onClick={() => setAba("TERMINADAS")}>Terminadas</button>
           </div>
         </div>
         <div className="table-wrap">
