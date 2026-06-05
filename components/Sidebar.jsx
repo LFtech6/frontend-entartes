@@ -28,28 +28,21 @@ function getInitials(nome) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export default function Sidebar() {
-  const pathname = usePathname();
-  const router   = useRouter();
-  const [user, setUser] = useState(null);
-
-  useEffect(() => { setUser(getUser()); }, []);
-
-  function handleLogout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    router.push('/');
-  }
-
-  const role       = user?.perfil || '';
-  const brandTitle = role === 'ENCARREGADO' ? 'Portal do Encarregado' : 'Backoffice';
-  const items      = NAV_ITEMS.filter(i => i.roles.length === 0 || i.roles.includes(role));
+function SidebarContent({ user, items, pathname, onLogout, onClose }) {
+  const brandTitle = user?.perfil === 'ENCARREGADO' ? 'Portal do Encarregado' : 'Backoffice';
 
   return (
-    <aside className="sidebar">
-      <div className="sb-brand">
-        <div className="sb-brand-name">ent&apos;<em>artes</em></div>
-        <div className="sb-brand-sub">{brandTitle}</div>
+    <>
+      <div className="sb-brand" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div className="sb-brand-name">ent&apos;<em>artes</em></div>
+          <div className="sb-brand-sub">{brandTitle}</div>
+        </div>
+        {onClose && (
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: '1.1rem', padding: 4 }}>
+            <i className="fa-solid fa-xmark" />
+          </button>
+        )}
       </div>
 
       <div className="sb-user">
@@ -67,6 +60,7 @@ export default function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
+            onClick={onClose}
             className={`nav-link${pathname.startsWith(item.href) ? ' active' : ''}`}
           >
             <i className={`fa-solid ${item.icon}`} />
@@ -76,11 +70,42 @@ export default function Sidebar() {
       </nav>
 
       <div className="sb-bottom">
-        <button className="sb-logout" onClick={handleLogout}>
+        <button className="sb-logout" onClick={onLogout}>
           <i className="fa-solid fa-right-from-bracket" />
           {' '}Terminar Sessão
         </button>
       </div>
-    </aside>
+    </>
+  );
+}
+
+export default function Sidebar({ menuOpen, setMenuOpen }) {
+  const pathname = usePathname();
+  const router   = useRouter();
+  const [user, setUser] = useState(null);
+
+  useEffect(() => { setUser(getUser()); }, []);
+
+  function handleLogout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    router.push('/');
+  }
+
+  const role  = user?.perfil || '';
+  const items = NAV_ITEMS.filter(i => i.roles.length === 0 || i.roles.includes(role));
+
+  return (
+    <>
+      {/* Sidebar desktop */}
+      <aside className="sidebar">
+        <SidebarContent user={user} items={items} pathname={pathname} onLogout={handleLogout} />
+      </aside>
+
+      {/* Drawer mobile */}
+      <aside className="sidebar-mobile-drawer" style={{ transform: menuOpen ? 'translateX(0)' : 'translateX(-100%)' }}>
+        <SidebarContent user={user} items={items} pathname={pathname} onLogout={handleLogout} onClose={() => setMenuOpen(false)} />
+      </aside>
+    </>
   );
 }
